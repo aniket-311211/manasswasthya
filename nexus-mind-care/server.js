@@ -499,18 +499,32 @@ app.post('/api/chat/rooms/:roomId/messages', async (req, res) => {
     const { roomId } = req.params;
     const { clerkId, content, role, senderName, senderAvatar } = req.body;
 
-    // Find user
+    // Find user by clerkId, or use/create a 'system' user for mentor/system messages
     let userId = null;
     if (clerkId) {
       const user = await prisma.user.findUnique({ where: { clerkId } });
       if (user) userId = user.id;
     }
 
-    // For mentor messages without a user account, we still save
+    // For mentor messages without a Clerk account, ensure a fallback system user exists
+    if (!userId) {
+      const systemUser = await prisma.user.upsert({
+        where: { clerkId: 'system' },
+        update: {},
+        create: {
+          clerkId: 'system',
+          email: 'system@manasswasthya.app',
+          firstName: senderName || 'System',
+          lastName: ''
+        }
+      });
+      userId = systemUser.id;
+    }
+
     const message = await prisma.chatMessage.create({
       data: {
         roomId,
-        userId: userId || 'system',
+        userId,
         content,
         role: role || 'user'
       }

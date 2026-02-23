@@ -311,8 +311,14 @@ export const CommunityProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     payload: {
                         roomId,
                         message: {
-                            ...message,
+                            id: message.id,
+                            roomId: message.roomId,
+                            senderId: user?.id || 'system',
+                            senderName,
+                            senderAvatar,
+                            content: message.content,
                             timestamp: new Date(message.timestamp),
+                            role,
                         },
                     },
                 });

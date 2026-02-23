@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Send, Users, Circle } from 'lucide-react';
+import { ArrowLeft, Send, Users } from 'lucide-react';
 import { useCommunity, ChatMessage, ChatRoom } from '@/contexts/CommunityContext';
 import { useUser } from '@clerk/clerk-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 
 interface DiscussionGroup {
     id: string;
@@ -13,8 +13,7 @@ interface DiscussionGroup {
     topic: string;
     description: string;
     participantCount: number;
-    moderator: string;
-    isJoined: boolean;
+    type: string;
 }
 
 const GroupDiscussion: React.FC = () => {
@@ -22,47 +21,51 @@ const GroupDiscussion: React.FC = () => {
     const { user } = useUser();
     const [selectedGroup, setSelectedGroup] = useState<DiscussionGroup | null>(null);
     const [messageText, setMessageText] = useState('');
+    const [groups, setGroups] = useState<DiscussionGroup[]>([]);
+    const [loadingGroups, setLoadingGroups] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Mock groups (will be replaced by API data)
-    const groups: DiscussionGroup[] = [
-        {
-            id: 'group-1',
-            name: 'Anxiety Support Circle',
-            topic: 'Managing Daily Anxiety',
-            description: 'A safe space to share experiences and coping strategies for anxiety.',
-            participantCount: 24,
-            moderator: 'Dr. Sharma',
-            isJoined: false,
-        },
-        {
-            id: 'group-2',
-            name: 'Mindfulness Practice',
-            topic: 'Daily Meditation Check-in',
-            description: 'Share your meditation experiences and learn new techniques.',
-            participantCount: 18,
-            moderator: 'Priya Singh',
-            isJoined: true,
-        },
-        {
-            id: 'group-3',
-            name: 'Student Wellness Hub',
-            topic: 'Academic Stress Management',
-            description: 'Discuss strategies for managing academic pressure and burnout.',
-            participantCount: 32,
-            moderator: 'Arjun Patel',
-            isJoined: false,
-        },
-    ];
+    // Fetch real groups from DB
+    useEffect(() => {
+        const loadGroups = async () => {
+            setLoadingGroups(true);
+            try {
+                const rooms = await fetchChatRooms('group');
+                const mapped: DiscussionGroup[] = rooms.map((r: any) => ({
+                    id: r.id,
+                    name: r.name || 'Group',
+                    topic: r.topic || 'General',
+                    description: r.description || '',
+                    participantCount: r.participants?.length ?? 0,
+                    type: r.type,
+                }));
+                setGroups(mapped);
+            } catch (e) {
+                console.error('Failed to load groups:', e);
+            } finally {
+                setLoadingGroups(false);
+            }
+        };
+        loadGroups();
+    }, []);
 
+    // Auto-scroll to bottom on new messages
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [state.currentRoom?.messages]);
 
     const handleSelectGroup = async (group: DiscussionGroup) => {
         setSelectedGroup(group);
-        // In a real app, this would fetch or create a chat room for this group
+        // Set a room skeleton first so the UI shows immediately
         setCurrentRoom({
+            id: group.id,
+            type: 'group',
+            name: group.name,
+            topic: group.topic,
+            messages: [],
+        });
+        // Then fetch real persisted messages
+        await fetchMessages(group.id, {
             id: group.id,
             type: 'group',
             name: group.name,
@@ -88,7 +91,7 @@ const GroupDiscussion: React.FC = () => {
         setCurrentRoom(null);
     };
 
-    // Chat view
+    // ── Chat View ────────────────────────────────────────────────────────────
     if (selectedGroup) {
         return (
             <div className="h-[600px] flex flex-col bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/50 overflow-hidden">
@@ -116,33 +119,34 @@ const GroupDiscussion: React.FC = () => {
                     {(!state.currentRoom?.messages || state.currentRoom.messages.length === 0) ? (
                         <div className="flex flex-col items-center justify-center h-full text-center">
                             <div className="text-4xl mb-4">💬</div>
-                            <h4 className="text-lg font-medium text-gray-900 mb-2">
-                                Start the discussion
-                            </h4>
-                            <p className="text-gray-600 max-w-sm">
-                                Be the first to share something with the group!
-                            </p>
+                            <h4 className="text-lg font-medium text-gray-900 mb-2">Start the discussion</h4>
+                            <p className="text-gray-600 max-w-sm">Be the first to share something with the group!</p>
                         </div>
                     ) : (
-                        state.currentRoom.messages.map((message) => (
-                            <div
-                                key={message.id}
-                                className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div className="max-w-xs lg:max-w-md">
-                                    <div className="flex items-center space-x-2 mb-1">
-                                        <span className="text-lg">{message.senderAvatar}</span>
-                                        <span className="text-sm font-medium text-gray-700">{message.senderName}</span>
-                                        <span className="text-xs text-gray-500">
-                                            {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
-                                        </span>
-                                    </div>
-                                    <div className="px-4 py-3 rounded-2xl bg-white border border-gray-200 shadow-sm">
-                                        <p className="text-sm">{message.content}</p>
+                        state.currentRoom.messages.map((message: ChatMessage) => {
+                            const isOwn = message.senderId === user?.id || message.role === (state.isMentorLoggedIn ? 'mentor' : 'user');
+                            return (
+                                <div key={message.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                                    <div className="max-w-xs lg:max-w-md">
+                                        {!isOwn && (
+                                            <div className="flex items-center space-x-2 mb-1">
+                                                <span className="text-lg">{message.senderAvatar || '👤'}</span>
+                                                <span className="text-sm font-medium text-gray-700">{message.senderName || 'User'}</span>
+                                                <span className="text-xs text-gray-500">
+                                                    {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className={`px-4 py-3 rounded-2xl ${isOwn
+                                            ? 'bg-blue-600 text-white rounded-br-md'
+                                            : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md shadow-sm'
+                                            }`}>
+                                            <p className="text-sm">{message.content}</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                     <div ref={messagesEndRef} />
                 </div>
@@ -165,12 +169,34 @@ const GroupDiscussion: React.FC = () => {
                             <Send className="w-4 h-4" />
                         </Button>
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">Messages are saved and visible to all group members.</p>
                 </div>
             </div>
         );
     }
 
-    // Group list view
+    // ── Group List View ──────────────────────────────────────────────────────
+    if (loadingGroups) {
+        return (
+            <div className="flex items-center justify-center h-48">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">Loading groups...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (groups.length === 0) {
+        return (
+            <div className="text-center py-16">
+                <div className="text-4xl mb-4">👥</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No groups yet</h3>
+                <p className="text-gray-600">Community groups will appear here once created.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {groups.map((group) => (
@@ -179,41 +205,22 @@ const GroupDiscussion: React.FC = () => {
                     className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/50 overflow-hidden hover:shadow-xl transition-shadow"
                 >
                     <div className="p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <Badge variant="secondary" className="text-xs">
-                                {group.topic}
-                            </Badge>
-                            {group.isJoined && (
-                                <Badge className="bg-green-100 text-green-700 text-xs">Joined</Badge>
-                            )}
+                        <div className="mb-4">
+                            <Badge variant="secondary" className="text-xs">{group.topic}</Badge>
                         </div>
-
                         <h3 className="font-bold text-gray-900 text-lg mb-2">{group.name}</h3>
                         <p className="text-gray-700 text-sm mb-4 leading-relaxed">{group.description}</p>
-
-                        <div className="space-y-3 mb-6">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Active Members</span>
-                                <span className="font-medium text-gray-900">{group.participantCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Moderator</span>
-                                <span className="font-medium text-gray-900">{group.moderator}</span>
+                        <div className="flex items-center justify-between text-sm mb-6">
+                            <div className="flex items-center space-x-1 text-gray-600">
+                                <Users className="w-4 h-4" />
+                                <span>{group.participantCount} members</span>
                             </div>
                         </div>
-
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-2">
-                                <Circle className="w-2 h-2 bg-green-400 rounded-full" />
-                                <span className="text-sm text-gray-600">{group.participantCount} online</span>
-                            </div>
-                        </div>
-
                         <Button
                             onClick={() => handleSelectGroup(group)}
                             className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                         >
-                            {group.isJoined ? 'Enter Discussion' : 'Join Group'}
+                            Enter Discussion
                         </Button>
                     </div>
                 </div>

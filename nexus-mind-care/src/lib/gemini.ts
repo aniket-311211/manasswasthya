@@ -91,11 +91,20 @@ export interface MedicineAnalysis {
   confidence: number;
 }
 
+// Timeout wrapper: rejects after ms milliseconds
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 export class MentalHealthAI {
   private genAI: GoogleGenerativeAI | null = null;
   private model: GenerativeModel | null = null;
   private chatHistory: ChatMessage[] = [];
   private hasApiKey: boolean = false;
+  private isProcessing: boolean = false;
 
   constructor() {
     console.log('🔧 MentalHealthAI Constructor - Checking API keys...');
@@ -143,6 +152,14 @@ export class MentalHealthAI {
   async chat(userMessage: string): Promise<string> {
     console.log('📨 User message:', userMessage);
 
+    // Prevent concurrent requests from stacking up
+    if (this.isProcessing) {
+      console.warn('⚠️ Already processing a message, please wait...');
+      return "I'm still thinking about your previous message. Please wait a moment.";
+    }
+
+    this.isProcessing = true;
+
     // Add user message to history
     this.chatHistory.push({
       role: 'user',
@@ -150,30 +167,35 @@ export class MentalHealthAI {
       timestamp: new Date()
     });
 
-    // CRISIS CHECK FIRST - Always prioritize safety
-    if (this.isCrisisMessage(userMessage)) {
-      console.log('🚨 Crisis detected - returning emergency response');
-      this.chatHistory.push({
-        role: 'assistant',
-        content: CRISIS_RESPONSE,
-        timestamp: new Date()
-      });
-      return CRISIS_RESPONSE;
-    }
-
-    // No API key - return helpful fallback
-    if (!this.model) {
-      const fallbackResponse = "I'm here to support you, but I'm having trouble connecting to my AI service right now. Please try again in a moment, or if you're in crisis, please call KIRAN at 1800-599-0019.";
-      this.chatHistory.push({
-        role: 'assistant',
-        content: fallbackResponse,
-        timestamp: new Date()
-      });
-      return fallbackResponse;
-    }
-
     try {
-      // Build conversation context
+      // CRISIS CHECK FIRST - Always prioritize safety
+      if (this.isCrisisMessage(userMessage)) {
+        console.log('🚨 Crisis detected - returning emergency response');
+        this.chatHistory.push({
+          role: 'assistant',
+          content: CRISIS_RESPONSE,
+          timestamp: new Date()
+        });
+        return CRISIS_RESPONSE;
+      }
+
+      // No API key - return helpful fallback
+      if (!this.model) {
+        const fallbackResponse = "I'm here to support you, but I'm having trouble connecting to my AI service right now. Please try again in a moment, or if you're in crisis, please call KIRAN at 1800-599-0019.";
+        this.chatHistory.push({
+          role: 'assistant',
+          content: fallbackResponse,
+          timestamp: new Date()
+        });
+        return fallbackResponse;
+      }
+
+      // Trim history before building context (keep last 4 exchanges = 8 messages + current)
+      if (this.chatHistory.length > 20) {
+        this.chatHistory = this.chatHistory.slice(-20);
+      }
+
+      // Build conversation context using only recent history
       const recentHistory = this.chatHistory.slice(-6);
       let context = SYSTEM_PROMPT + "\n\n--- Conversation ---\n";
 
@@ -184,9 +206,9 @@ export class MentalHealthAI {
 
       context += "\nRespond as Manas Svasthya (warm, supportive, 2-4 sentences):";
 
-      // Call Gemini API
+      // Call Gemini API with a 30-second timeout
       console.log('🤖 Calling Gemini API...');
-      const result = await this.model.generateContent(context);
+      const result = await withTimeout(this.model.generateContent(context), 30000);
       const response = result.response.text();
       console.log('✅ AI Response received');
 
@@ -196,11 +218,6 @@ export class MentalHealthAI {
         content: response,
         timestamp: new Date()
       });
-
-      // Trim history if too long
-      if (this.chatHistory.length > 20) {
-        this.chatHistory = this.chatHistory.slice(-20);
-      }
 
       return response;
 
@@ -262,6 +279,8 @@ export class MentalHealthAI {
       });
 
       return errorMessage;
+    } finally {
+      this.isProcessing = false;
     }
   }
 

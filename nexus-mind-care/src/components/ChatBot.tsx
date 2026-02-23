@@ -31,7 +31,7 @@ interface SpeechRecognition extends EventTarget {
 }
 
 interface SpeechRecognitionConstructor {
-  new (): SpeechRecognition;
+  new(): SpeechRecognition;
 }
 
 declare global {
@@ -55,13 +55,13 @@ const ChatBot = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  
+
   // Speech recognition state
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  
+
   // Audio file state
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
@@ -73,7 +73,7 @@ const ChatBot = () => {
   // Initialize speech recognition
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
+
     if (SpeechRecognition) {
       setIsSpeechSupported(true);
       const recognition = new SpeechRecognition();
@@ -91,7 +91,7 @@ const ChatBot = () => {
           .map(result => result[0])
           .map(result => result.transcript)
           .join('');
-        
+
         setInputValue(transcript);
       };
 
@@ -147,13 +147,13 @@ const ChatBot = () => {
         setAudioError('Please select a valid audio file');
         return;
       }
-      
+
       // Validate file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
         setAudioError('Audio file size must be less than 10MB');
         return;
       }
-      
+
       setSelectedAudioFile(file);
       setAudioError(null);
     }
@@ -302,6 +302,7 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
         timestamp: new Date().toLocaleTimeString()
       };
       setMessages(prev => [...prev, errorResponse]);
+      setStreamingText("");
     } finally {
       setIsLoading(false);
     }
@@ -343,11 +344,10 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                 className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-sm lg:max-w-md px-4 py-3 rounded-2xl ${
-                    message.type === 'user'
+                  className={`max-w-sm lg:max-w-md px-4 py-3 rounded-2xl ${message.type === 'user'
                       ? 'bg-primary text-primary-foreground ml-4'
                       : 'bg-secondary text-secondary-foreground mr-4'
-                  }`}
+                    }`}
                 >
                   {message.type === 'bot' && (
                     <div className="flex items-center mb-2">
@@ -384,14 +384,14 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                 <span className="text-sm">{speechError}</span>
               </div>
             )}
-            
+
             {audioError && (
               <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
                 <AlertCircle className="w-4 h-4" />
                 <span className="text-sm">{audioError}</span>
               </div>
             )}
-            
+
             {/* Speech Not Supported Message */}
             {!isSpeechSupported && (
               <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700">
@@ -430,7 +430,7 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                   disabled={isProcessingAudio}
                 />
               </div>
-              
+
               {/* Audio Upload Button */}
               <Button
                 onClick={() => fileInputRef.current?.click()}
@@ -440,17 +440,16 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
               >
                 <Upload className="w-4 h-4" />
               </Button>
-              
+
               {/* Microphone Button */}
               {isSpeechSupported && (
                 <Button
                   onClick={toggleRecording}
                   size="lg"
-                  className={`px-4 rounded-xl ${
-                    isRecording 
-                      ? 'bg-red-500 hover:bg-red-600 text-white' 
+                  className={`px-4 rounded-xl ${isRecording
+                      ? 'bg-red-500 hover:bg-red-600 text-white'
                       : 'bg-gray-500 hover:bg-gray-600 text-white'
-                  }`}
+                    }`}
                   disabled={isLoading || isProcessingAudio}
                 >
                   {isRecording ? (
@@ -460,8 +459,8 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                   )}
                 </Button>
               )}
-              
-              <Button 
+
+              <Button
                 onClick={handleSendMessage}
                 size="lg"
                 className="px-4 rounded-xl"
@@ -474,7 +473,7 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                 )}
               </Button>
             </div>
-            
+
             {/* Process Audio Button */}
             {selectedAudioFile && (
               <div className="flex justify-center">
@@ -497,7 +496,7 @@ Respond as Manas Svasthya, the compassionate AI mental health companion, with em
                 </Button>
               </div>
             )}
-            
+
             {/* Recording Indicator */}
             {isRecording && (
               <div className="flex items-center gap-2 text-red-500 animate-pulse">
